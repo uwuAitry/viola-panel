@@ -136,7 +136,9 @@ impl PanelConfig {
         self.render.insert(key(name), value);
     }
 
-    /// Read a key from the `render:` mapping.
+    /// Read a key from the `render:` mapping. Only the tests need to inspect
+    /// what [`Self::sync_render_block`] wrote; the UI reads `panel` directly.
+    #[cfg(test)]
     pub fn get_render(&self, name: &str) -> Option<&Value> {
         self.render.get(key(name))
     }

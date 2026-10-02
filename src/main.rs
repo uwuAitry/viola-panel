@@ -486,14 +486,21 @@ impl PanelApp {
             match &self.driver {
                 Some(Ok(info)) => {
                     ui.monospace(format!(
-                        "{} v{}  out {}ch  {} Hz  buffer {}..{} (preferred {})",
+                        "{} v{}  in {}ch / out {}ch  {} Hz",
                         info.driver_name,
                         info.driver_version,
+                        info.input_channels,
                         info.output_channels,
                         info.current_sample_rate,
+                    ));
+                    ui.monospace(format!(
+                        "buffer {}..{} (preferred {}, gran {})  latency in {} / out {}",
                         info.buffer_min,
                         info.buffer_max,
-                        info.buffer_preferred
+                        info.buffer_preferred,
+                        info.buffer_granularity,
+                        info.input_latency.0,
+                        info.output_latency.0
                     ));
                 }
                 Some(Err(e)) => {
