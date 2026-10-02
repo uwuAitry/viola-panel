@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[package]
+name = "viola-panel"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "Control panel for the orender output side of the viola-bridge chain"
+publish = false
+
+[dependencies]
+eframe = "0.36"
+serde = { version = "1", features = ["derive"] }
+serde_yaml_ng = "0.10"
+[profile.release]
+opt-level = 2
+

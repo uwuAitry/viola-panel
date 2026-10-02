@@ -1,0 +1,49 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  viola-panel:
+    name: viola-panel.exe
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '.'
+
+      - name: Test
+        shell: pwsh
+        run: cargo test --release
+
+      - name: Build
+        shell: pwsh
+        run: cargo build --release
+
+      - name: Stage artifact + hashes
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item target/release/viola-panel.exe dist/
+          Get-FileHash dist/viola-panel.exe -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  viola-panel.exe" } |
+            Set-Content dist/SHA256SUMS.txt
+          Get-Content dist/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: viola-panel-windows-x86_64
+          path: dist/
+          if-no-files-found: error
