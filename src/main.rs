@@ -40,7 +40,7 @@ fn acquire_single_instance() -> bool {
         return true;
     }
     // SAFETY: no preconditions.
-    unsafe { win::GetLastError() != ERROR_ALREADY_EXISTS }
+    unsafe { win::GetLastError() != win::ERROR_ALREADY_EXISTS }
 }
 
 #[cfg(not(windows))]
@@ -111,10 +111,11 @@ fn main() -> eframe::Result {
         options,
         Box::new(|_cc| Ok(Box::new(PanelApp))),
     );
-    log(match &result {
+    let message = match &result {
         Ok(()) => "panel exited normally".to_string(),
         Err(e) => format!("panel exited with error: {e}"),
-    });
+    };
+    log(&message);
     result
 }
 
