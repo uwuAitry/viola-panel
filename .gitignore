@@ -1,1 +1,3 @@
 /target
+# Build artifacts come from CI and are never committed (the exe is ~14 MB).
+/dist
