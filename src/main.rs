@@ -1,3 +1,4 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! viola-panel - control panel for the orender output side of the viola-bridge chain.
 //!
