@@ -11,7 +11,7 @@
 - 不是 viola-bridge 的一部分。独立仓库、独立 CI、独立版本。**不复制、不链接 viola-bridge 的代码**，只通过进程边界调用。
 - 不改 Studio One 的 ASIO 设置。S1 的 ASIO 设备恒为 `viola-bridge ASIO`，面板不碰。
 - 不是 ASIO 驱动自身的控制面板宿主。它只是能**代你打开**当前输出驱动的控制面板。
-- 本轮**不做**「在 S1 的音频设备设置里打开本面板」（需改 `crates/viola_asio` 的 `control_panel` 实现，属另一仓库另一 CI job，可后加不返工）。
+- 本轮**不做**「在 S1 的音频设备设置里打开本面板」。该路径 2026-10-03 已在 viola-bridge 侧实现并装机验证（见 D1）。
 
 ## 1. 背景与硬事实（均已核实，带证据）
 
@@ -233,7 +233,7 @@ orender.exe render "\\.\pipe\orender.input" --continuous \
 - **验收**：云端产出 `viola-panel.exe`，本机只下载不编译
 
 ### 待办（不在本轮）
-- **D1**：在 S1 的音频设备设置里打开本面板 —— 需改 `crates/viola_asio/src/driver.rs:993-999` 的 `asio_control_panel`，由 DLL `ShellExecute` 拉起本 exe（`asio_init` 目前丢弃了 `sysHandle`，`driver.rs:449-455`）。属 viola-bridge 仓库另一个 CI job，**可后加不返工**。
+- **D1：已完成（2026-10-03，viola-bridge `f0c8eca`）**。`crates/viola_asio/src/driver.rs` 的 `asio_control_panel` 现在用 `GetModuleHandleExW` + `GetModuleFileNameW` 取本 DLL 路径，在同目录找 `viola-panel.exe`；找不到就 `ASE_NotPresent`，找到则先 `FindWindowW(NULL, "viola-panel")`，已开着就 `ShowWindow(SW_RESTORE)` + `SetForegroundWindow`，否则 `ShellExecuteW` 拉起（面板有单实例互斥体，重复启动会静默退出，所以必须先在窗口层判断）。`scripts/register-asio.ps1` 新增 `-PanelExe` 参数把 exe 拷到 `C:\ProgramData\viola-asio\`。真机验证：Studio One 7 加载了新版 DLL，点击「控制面板」按钮面板正常弹出。
 
 ## 9. 界面层修订（2026-10-03）：egui → WebView
 
