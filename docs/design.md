@@ -144,6 +144,10 @@ orender.exe render "\\.\pipe\orender.input" --continuous \
 ```
 
 - **argv 字面量由单测锁定**，防与 orender 的 CLI 漂移。
+- **调用形态固定为 `cmd.exe /S /C "<line>"`**：`/S` 去掉首尾引号剥离，最外层必须自己
+  再包一对引号。不可用 `Command::args` 传 line（Rust 会把 line 自身的 `"` 转义成 `\"`，
+  cmd.exe 不认，含空格的 `orender.exe` 路径会在第一个空格处被截断，引擎以 exit 255 秒退）。
+  故用 `CommandExt::raw_arg` 逐段传 `/S`、`/C`、`"<line>"`。launcher 单测 `cmd_receives_the_line_with_quotes_intact` 真起 cmd.exe 锁定此点。
 - `--output-file -` / `--output-file-format raw-f32` 仅 `file` 后端需要。
 - 不把 orender 输出直接写命名管道（`file_sink.rs` 用 `CREATE_ALWAYS`，对管道报 `os error 87`）。
 - 子进程 `CREATE_NO_WINDOW`；stdout/stderr 重定向到面板日志文件（供状态条读尾部）。
@@ -287,6 +291,8 @@ Tauri 的插件体系与打包器换不回其复杂度。`wry` 是 Tauri 的底�
   （本轮在 `main.rs` 另增 3 个，总计 29 个）。
 - 被删除的是 `main.rs` 的 egui 渲染代码与 `eframe` 依赖；`main.rs` 自身的
   `acquire_single_instance` / `log_tail` 辅助函数保留。
+- **例外增开（真机测试发现）**：`launcher.rs` 的 `cmd /S /C` 引号传递修正（见 4.1），
+  函数签名未变，新增 1 个真起 cmd.exe 的单测（共 30 个）。
 
 ### 9.5 视觉方向（Q5 裁定）
 

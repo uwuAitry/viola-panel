@@ -183,7 +183,7 @@ impl Engine {
     }
 }
 
-/// Spawn `cmd /S /C <line>` with no console window; stdout+stderr appended to
+/// Spawn `cmd /S /C "<line>"` with no console window; stdout+stderr appended to
 /// `spec.log_path`; stdin null. Creates the log's parent directory if needed.
 pub fn start(spec: &LaunchSpec) -> std::io::Result<Engine> {
     if let Some(parent) = spec.log_path.parent() {
@@ -198,8 +198,9 @@ pub fn start(spec: &LaunchSpec) -> std::io::Result<Engine> {
     let log_err = log.try_clone()?;
 
     let line = build_command_line(spec);
-    let child = hidden_cmd()
-        .args(["/S", "/C", line.as_str()])
+    let mut cmd = hidden_cmd();
+    cmd_line(&mut cmd, &line);
+    let child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(log_err))
@@ -217,6 +218,24 @@ fn hidden_cmd() -> Command {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     cmd
+}
+
+/// Append cmd.exe's `/S /C "<line>"` form to `cmd`.
+///
+/// The line must reach cmd.exe through [`CommandExt::raw_arg`]: `args` escapes
+/// the line's own quotes as `\"`, which cmd.exe does not undo, so a quoted
+/// `orender.exe` path was chopped at its first space and the engine died with
+/// exit 255. `/S` also strips the outer quotes, so the line needs its own pair.
+fn cmd_line(cmd: &mut Command, line: &str) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.raw_arg("/S").raw_arg("/C").raw_arg(format!("\"{line}\""));
+    }
+    #[cfg(not(windows))]
+    {
+        cmd.args(["/S", "/C", line]);
+    }
 }
 
 #[cfg(test)]
@@ -319,5 +338,27 @@ mod tests {
 
         s.latency_target_ms = Some(220);
         assert!(build_command_line(&s).contains("--latency-target-ms 220"));
+    }
+
+    /// The defect this pins: `Command::args` escapes a line's own quotes as
+    /// `\"`, which cmd.exe does not undo, so a quoted `orender.exe` path was
+    /// chopped at its first space and the engine died with exit 255. Spawns a
+    /// real cmd.exe and asserts the quotes arrive intact and unescaped.
+    #[test]
+    #[cfg(windows)]
+    fn cmd_receives_the_line_with_quotes_intact() {
+        let mut cmd = hidden_cmd();
+        cmd_line(&mut cmd, r#"echo "omni phony""#);
+        let out = cmd
+            .stdout(Stdio::piped())
+            .output()
+            .expect("spawn cmd");
+
+        assert!(out.status.success(), "cmd failed: {out:?}");
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            r#""omni phony""#,
+            "cmd mangled the quoting path"
+        );
     }
 }
