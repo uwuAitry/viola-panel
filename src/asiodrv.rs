@@ -6,6 +6,7 @@
 //! Sources: `iasiodrv.h`, `asio.h` (`#pragma pack(push,4)`), `asiolist.cpp:184`.
 
 use core::ffi::{c_char, c_void};
+use serde::Serialize;
 use std::ptr::null_mut;
 
 /// `ASIOBool` / `ASIOError` / `HRESULT` — all a Win32 `long` (32-bit under LLP64).
@@ -154,7 +155,7 @@ struct ComGuard {
 
 impl ComGuard {
     /// `RPC_E_CHANGED_MODE` counts as success-without-ownership: COM was already
-    /// initialised on this thread (by winit/eframe, typically), so the driver can
+    /// initialised on this thread (by the window event loop, typically), so the driver can
     /// still be created, but uninitialising would undo someone else's work.
     fn init() -> Result<Self, String> {
         // SAFETY: no output parameters; the return code is checked exhaustively.
@@ -250,7 +251,8 @@ fn cstr_latin1(buf: &[c_char]) -> String {
 /// (latin-1 `char[32]`), version, both channel counts, all four buffer bounds, both
 /// latency pairs, and the rate — 48000.0 if the driver accepts that rate but cannot
 /// report the current one, 0.0 if even that fails (design.md §6.5).
-#[derive(Clone, Debug)]
+/// Serialized to the frontend over IPC, so it carries `Serialize` (design.md 9.4).
+#[derive(Clone, Debug, Serialize)]
 pub struct DriverInfo {
     pub driver_name: String,
     pub driver_version: i32,

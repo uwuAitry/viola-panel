@@ -1,0 +1,642 @@
+/* viola-panel — rack insert, not a generic form.
+   Motion vocabulary is transitions.dev's token scale (see docs/design.md 9.5):
+   durations 40/80/150/250/350/400/500 ms, easings led by
+   cubic-bezier(.22,1,.36,1), open-slow/close-fast. Literal values are used so
+   each rule stands on its own, exactly as the upstream snippets do. */
+
+:root {
+  /* Motion — the shared scale, kept at the upstream tier boundaries. */
+  --duration-stagger: 40ms;
+  --duration-micro: 80ms;
+  --duration-quick: 150ms;
+  --duration-fast: 250ms;
+  --duration-medium: 350ms;
+  --duration-slow: 400ms;
+  --duration-very-slow: 500ms;
+  --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --ease-out: ease-out;
+  --distance-base: 8px;
+  --distance-medium: 12px;
+
+  /* Surface — anodised grey-brown, deliberately not pure black. */
+  --bg: #17161a;
+  --bg-rail: #1d1c21;
+  --bg-panel: #222127;
+  --bg-inset: #141317;
+  --bg-raised: #2a2930;
+  --line: #34333b;
+  --line-strong: #45444e;
+
+  --fg: #e6e4ec;
+  --fg-dim: #a5a2b0;
+  --fg-faint: #74717f;
+
+  --amber: #f0a53c;      /* enabled / armed */
+  --green: #5ec27a;      /* flowing */
+  --red: #e0685f;        /* broken */
+  --focus: #8fb6ff;
+
+  --radius: 6px;
+  --radius-lg: 10px;
+  --mono: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.45 var(--sans);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 10px;
+  gap: 10px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Signal chain ─────────────────────────────────────────────────────────
+   The hero. It carries the one fact a generic settings form cannot: where
+   this process sits in the chain and which link is currently broken. */
+.chain {
+  background: linear-gradient(180deg, var(--bg-rail), var(--bg-panel));
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* Six nodes do not fit the window's 560px minimum, so the row wraps rather
+   than crushing every label into an ellipsis. Each node keeps a readable
+   floor; a wrapped row simply reads as a second line of the same chain. */
+.chain__list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chain__node {
+  position: relative;
+  flex: 1 1 104px;
+  min-width: 104px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px 6px 16px;
+}
+
+/* The connector between nodes: a rail that is dim while idle and takes the
+   signal-green when the chain is flowing. It trails the node it leaves, so a
+   wrapped row start has no rail pointing at empty space. */
+.chain__node:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 8px;
+  height: 1px;
+  background: var(--line-strong);
+  transition: background var(--duration-fast) var(--ease-smooth-out),
+              opacity var(--duration-fast) var(--ease-smooth-out);
+}
+
+.chain__node[data-state="flow"]:not(:last-child)::after {
+  background: var(--green);
+  box-shadow: 0 0 6px rgba(94, 194, 122, 0.5);
+}
+}
+
+.chain__node--managed {
+  background: var(--bg-inset);
+  border-radius: var(--radius);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.chain__name {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chain__meta {
+  font: 10px/1.3 var(--mono);
+  color: var(--fg-faint);
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chain__note {
+  margin: 8px 2px 0;
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+
+/* ── Status lamp ─────────────────────────────────────────────────────────── */
+.lamp {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fg-faint);
+  flex: none;
+  transition: background var(--duration-fast) var(--ease-smooth-out),
+              box-shadow var(--duration-fast) var(--ease-smooth-out);
+}
+
+.lamp[data-state="flow"] {
+  background: var(--green);
+  box-shadow: 0 0 7px rgba(94, 194, 122, 0.65);
+}
+
+.lamp[data-state="armed"] {
+  background: var(--amber);
+  box-shadow: 0 0 7px rgba(240, 165, 60, 0.65);
+}
+
+.lamp[data-state="broken"] {
+  background: var(--red);
+  box-shadow: 0 0 7px rgba(224, 104, 95, 0.65);
+}
+
+/* ── Rack sections ──────────────────────────────────────────────────────── */
+.deck {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.rack {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px 14px;
+}
+
+.rack__title {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--fg-dim);
+}
+
+.rack__title--button {
+  margin: 0 0 2px;
+}
+
+/* ── Accordion (Render) ─────────────────────────────────────────────────── */
+.accordion {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  margin: 0;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+
+.accordion__chevron {
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--fg-dim);
+  border-bottom: 1.5px solid var(--fg-dim);
+  transform: rotate(-45deg);
+  /* Flipped with a transform, never by morphing the chevron's path data
+     (that trick is Chromium-only), per the upstream accordion guidance. */
+  transition: transform var(--duration-fast) var(--ease-smooth-out);
+}
+
+.accordion[aria-expanded="true"] .accordion__chevron {
+  transform: rotate(45deg);
+}
+
+/* Animated on grid-template-rows so content height needs no measuring. */
+.accordion__panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--duration-fast) var(--ease-smooth-out),
+              opacity var(--duration-fast) var(--ease-smooth-out);
+  opacity: 0;
+}
+
+.rack[data-open="true"] .accordion__panel {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+/* Padding goes on the inner element: padding on the 0fr track would keep a
+   sliver of height open. */
+.accordion__inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ── Fields ─────────────────────────────────────────────────────────────── */
+.field {
+  display: grid;
+  grid-template-columns: 116px 1fr;
+  gap: 4px 12px;
+  align-items: start;
+  padding: 7px 0;
+}
+
+.field--stack {
+  grid-template-columns: 1fr;
+}
+
+.field__label {
+  font-size: 12px;
+  color: var(--fg-dim);
+  padding-top: 6px;
+}
+
+.field__control { min-width: 0; }
+
+.field__control--inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hint, .note {
+  margin: 5px 0 0;
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+
+.note {
+  margin: 2px 0 6px;
+  padding: 7px 10px;
+  background: var(--bg-inset);
+  border-left: 2px solid var(--amber);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  color: var(--fg-dim);
+}
+
+.rule {
+  height: 1px;
+  margin: 10px 0;
+  border: 0;
+  background: var(--line);
+}
+
+code {
+  font: 11px var(--mono);
+  color: var(--fg-dim);
+  background: var(--bg-inset);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.num {
+  font: 12px var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+
+/* ── Controls ───────────────────────────────────────────────────────────── */
+select, input[type="text"] {
+  width: 100%;
+  padding: 6px 9px;
+  background: var(--bg-inset);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--fg);
+  font: 12px var(--sans);
+  transition: border-color var(--duration-quick) var(--ease-smooth-out),
+              box-shadow var(--duration-quick) var(--ease-smooth-out),
+              background var(--duration-quick) var(--ease-smooth-out);
+}
+
+input[type="text"] { font-family: var(--mono); }
+
+select:hover:not(:disabled), input[type="text"]:hover:not(:disabled) {
+  border-color: var(--fg-faint);
+}
+
+select:focus-visible, input[type="text"]:focus-visible, .btn:focus-visible,
+.accordion:focus-visible, input[type="checkbox"]:focus-visible + * {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+select:disabled, input:disabled, .btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+/* Range is the one control that should read as a hardware trim pot. */
+input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  accent-color: var(--amber);
+}
+
+input[type="range"]:disabled { opacity: 0.35; }
+
+/* ── Switch ─────────────────────────────────────────────────────────────── */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch__track {
+  position: relative;
+  width: 34px;
+  height: 19px;
+  flex: none;
+  border-radius: 10px;
+  background: var(--bg-inset);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  transition: background var(--duration-medium) var(--ease-bounce),
+              box-shadow var(--duration-medium) var(--ease-bounce);
+}
+
+.switch__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--fg-faint);
+  transition: transform var(--duration-medium) var(--ease-bounce),
+              background var(--duration-medium) var(--ease-bounce);
+}
+
+.switch input:checked + .switch__track {
+  background: rgba(240, 165, 60, 0.28);
+  box-shadow: inset 0 0 0 1px var(--amber);
+}
+
+.switch input:checked + .switch__track .switch__thumb {
+  transform: translateX(15px);
+  background: var(--amber);
+}
+
+.switch input:disabled + .switch__track { opacity: 0.4; }
+
+.switch__text { font-size: 12px; }
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+.btn {
+  padding: 6px 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--fg);
+  font: 12px var(--sans);
+  cursor: pointer;
+  /* Enumerated properties only — never `transition: all`. */
+  transition: background var(--duration-fast) var(--ease-smooth-out),
+              border-color var(--duration-fast) var(--ease-smooth-out),
+              transform var(--duration-quick) var(--ease-smooth-out),
+              opacity var(--duration-quick) var(--ease-smooth-out);
+}
+
+.btn:hover:not(:disabled) {
+  background: #33323a;
+  border-color: var(--fg-faint);
+}
+
+.btn:active:not(:disabled) { transform: translateY(1px); }
+
+.btn--primary {
+  background: rgba(240, 165, 60, 0.16);
+  border-color: rgba(240, 165, 60, 0.55);
+  color: #ffd9a1;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: rgba(240, 165, 60, 0.26);
+  border-color: var(--amber);
+}
+
+.btn--quiet {
+  padding: 2px 7px;
+  background: none;
+  border-color: transparent;
+  color: var(--fg-faint);
+  font-size: 11px;
+}
+
+.btn--quiet:hover:not(:disabled) {
+  background: var(--bg-raised);
+  color: var(--fg-dim);
+}
+
+/* Armed state: a control that cannot act right now says why, in the lamp. */
+.btn[data-armed="false"] { opacity: 0.42; }
+
+/* ── Readout ────────────────────────────────────────────────────────────── */
+.readout {
+  margin-top: 8px;
+  padding: 9px 11px;
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font: 11px/1.6 var(--mono);
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: pre-wrap;
+}
+
+.readout:empty { display: none; }
+
+/* Unlike the driver readout this block is structured markup, so the pre-wrap
+   inherited from `.readout` would render the HTML indentation as blank lines. */
+.readout--facts {
+  padding: 10px 12px;
+  white-space: normal;
+}
+
+.facts__note {
+  margin: 0 0 8px;
+  font: 11px/1.5 var(--sans);
+  color: var(--fg-faint);
+}
+
+.facts__list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.facts__list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.facts__list dt { color: var(--fg-faint); }
+.facts__list dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+/* ── Bottom bar ─────────────────────────────────────────────────────────── */
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  background: var(--bg-rail);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+
+.bar__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.bar__text {
+  font-size: 12px;
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bar__text[data-error="true"] { color: var(--red); }
+
+.bar__actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+/* ── Log ────────────────────────────────────────────────────────────────── */
+.log {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 132px;
+  overflow: auto;
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font: 11px/1.55 var(--mono);
+  color: var(--fg-faint);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ── Toast (350 ms in, 250 ms out) ──────────────────────────────────────── */
+.toast-host {
+  position: fixed;
+  right: 14px;
+  bottom: 62px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.toast {
+  padding: 9px 13px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  color: var(--fg);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transform: translateY(16px);
+  filter: blur(2px);
+  /* Only the show rule carries the delay, so a retarget while showing is
+     immediate; hiding snaps back to 0. */
+  transition: opacity var(--duration-medium) var(--ease-smooth-out) var(--duration-micro),
+              transform var(--duration-medium) var(--ease-smooth-out) var(--duration-micro),
+              filter var(--duration-medium) var(--ease-smooth-out) var(--duration-micro);
+}
+
+.toast[data-show="true"] {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+
+.toast[data-show="false"] {
+  transition-duration: var(--duration-fast);
+  transition-delay: 0ms;
+}
+
+.toast[data-kind="ok"] { border-left-color: var(--green); }
+.toast[data-kind="warn"] { border-left-color: var(--amber); }
+.toast[data-kind="error"] { border-left-color: var(--red); }
+
+.trademark {
+  margin: 0;
+  font-size: 10px;
+  color: var(--fg-faint);
+  text-align: center;
+}
+
+/* A disabled control sitting under a group that is itself inert. */
+[hidden] { display: none !important; }
+
+/* ── Reduced motion ──────────────────────────────────────────────────────
+   Required by the transitions.dev spec: every snippet ships this guard, and
+   removing it fails an accessibility audit. Tweens are dropped, state
+   changes stay instant. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+  }
+
+  .accordion__chevron { transition: none !important; }
+  .lamp { transition: none !important; }
+  .switch__track, .switch__thumb { transition: none !important; }
+  .toast { transition: none !important; opacity: 1; transform: none; filter: none; }
+}

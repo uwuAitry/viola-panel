@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>viola-panel</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- The signal chain is the hero: it is the one piece of information that is
+     specific to this panel. It shows where this process sits in the chain and
+     which link is currently broken. -->
+<header class="chain" id="chain" aria-label="Signal chain">
+  <ol class="chain__list" id="chain-list">
+    <li class="chain__node" data-node="host">
+      <span class="lamp" data-state="idle"></span>
+      <span class="chain__name">Studio One</span>
+      <span class="chain__meta">host</span>
+    </li>
+    <li class="chain__node" data-node="driver">
+      <span class="lamp" data-state="idle"></span>
+      <span class="chain__name">viola_asio</span>
+      <span class="chain__meta">bridge driver</span>
+    </li>
+    <li class="chain__node" data-node="pipe">
+      <span class="lamp" data-state="idle"></span>
+      <span class="chain__name">pipe</span>
+      <span class="chain__meta">orender.input</span>
+    </li>
+    <li class="chain__node chain__node--managed" data-node="orender">
+      <span class="lamp" data-state="idle"></span>
+      <span class="chain__name">orender</span>
+      <span class="chain__meta" id="meta-orender">stopped</span>
+    </li>
+    <li class="chain__node chain__node--managed" data-node="ffplay">
+      <span class="lamp" data-state="idle"></span>
+      <span class="chain__name">ffplay</span>
+      <span class="chain__meta">sink</span>
+    </li>
+    <li class="chain__node" data-node="endpoint">
+      <span class="lamp" data-state="idle"></span>
+      <span class="chain__name" id="chain-endpoint">output</span>
+      <span class="chain__meta">Windows default</span>
+    </li>
+  </ol>
+  <p class="chain__note">This panel starts and stops the two marked links. The rest of the chain runs on its own.</p>
+</header>
+
+<main class="deck">
+
+  <section class="rack" aria-labelledby="output-title">
+    <h2 class="rack__title" id="output-title">Output</h2>
+
+    <div class="field">
+      <label class="field__label" for="backend">Backend</label>
+      <div class="field__control">
+        <select id="backend" name="output_backend">
+          <option value="file">file</option>
+          <option value="asio">asio</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field" id="row-device">
+      <label class="field__label" for="device">Device</label>
+      <div class="field__control">
+        <select id="device" name="output_device"></select>
+        <p class="hint" id="device-hint">Read from <code>HKLM\SOFTWARE\ASIO</code>. Nothing is loaded to list these.</p>
+      </div>
+    </div>
+
+    <p class="note" id="file-note" hidden>Backend <code>file</code> writes raw f32 to ffplay, which uses the Windows default device.</p>
+
+    <div class="field">
+      <label class="field__label" for="rate">Sample rate</label>
+      <div class="field__control">
+        <select id="rate" name="output_sample_rate"></select>
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="field__label" for="latency">Latency target</label>
+      <div class="field__control field__control--inline">
+        <input type="checkbox" id="latency-on">
+        <input type="range" id="latency" min="25" max="250" step="1" disabled>
+        <output class="num" id="latency-out" for="latency">220 ms</output>
+      </div>
+    </div>
+
+    <hr class="rule">
+
+    <div class="field field--stack">
+      <div class="field__control field__control--inline">
+        <button class="btn" id="probe" type="button">Read driver info</button>
+        <button class="btn" id="driver-panel" type="button">Open driver control panel</button>
+      </div>
+      <p class="hint">Both need the engine stopped: the driver can be open in only one process.</p>
+      <div class="readout" id="driver-readout" aria-live="polite"></div>
+    </div>
+
+    <div class="field" id="row-endpoint">
+      <span class="field__label">System default</span>
+      <div class="field__control">
+        <p class="num" id="endpoint">reading…</p>
+        <p class="hint">Change it in Windows Settings &rsaquo; System &rsaquo; Sound. This panel cannot.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="rack rack--collapsible" id="rack-render" data-open="true" aria-labelledby="render-title">
+    <h2 class="rack__title rack__title--button">
+      <button class="accordion" id="render-toggle" type="button" aria-expanded="true" aria-controls="render-body">
+        <span class="accordion__chevron" aria-hidden="true"></span>
+        <span>Render</span>
+      </button>
+    </h2>
+    <div class="accordion__panel" id="render-body">
+      <div class="accordion__inner">
+
+        <div class="field">
+          <label class="switch">
+            <input type="checkbox" id="vbap" name="enable_vbap">
+            <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+            <span class="switch__text">Enable VBAP</span>
+          </label>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="layout">Speaker layout</label>
+          <div class="field__control">
+            <input type="text" id="layout" name="speaker_layout" placeholder="(orender's built-in 7.1.4 preset)" spellcheck="false">
+            <p class="hint">A YAML path. Leave empty for orender's built-in 7.1.4 (12&nbsp;ch) preset.</p>
+          </div>
+        </div>
+
+        <hr class="rule">
+
+        <div class="readout readout--facts" id="facts">
+          <p class="facts__note">The driver's own counters live inside the ASIO DLL and are not readable from this process.</p>
+          <dl class="facts__list">
+            <div><dt>Engine</dt><dd class="num" id="fact-engine">stopped</dd></div>
+            <div><dt>Config</dt><dd class="num" id="fact-config">—</dd></div>
+          </dl>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="bar">
+  <div class="bar__status" role="status" aria-live="polite">
+    <span class="lamp" id="status-lamp" data-state="idle"></span>
+    <span class="bar__text" id="status-text">Engine stopped</span>
+    <button class="btn btn--quiet" id="log-toggle" type="button" aria-expanded="false" aria-controls="log">Details</button>
+  </div>
+
+  <div class="bar__actions">
+    <button class="btn" id="start" type="button">Start engine</button>
+    <button class="btn" id="stop" type="button">Stop</button>
+    <button class="btn btn--primary" id="apply" type="button">Save and restart</button>
+  </div>
+</footer>
+
+<pre class="log" id="log" hidden aria-label="Engine log tail"></pre>
+
+<div class="toast-host" id="toast-host" aria-live="polite"></div>
+
+<p class="trademark">ASIO is a trademark and software of Steinberg Media Technologies GmbH.</p>
+
+<script src="app.js"></script>
+</body>
+</html>

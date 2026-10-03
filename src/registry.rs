@@ -6,6 +6,8 @@
 //! the driver is instantiated from). The panel only lists them, so this module never
 //! touches COM.
 
+use serde::Serialize;
+
 /// The slice of advapi32 this crate needs, declared straight from the local Windows SDK
 /// headers (`um/winreg.h`, `um/winnt.h`, `shared/winerror.h`) so every signature and
 /// constant below is checkable against the SDK that ships with the toolchain.
@@ -38,7 +40,8 @@ const ERROR_MORE_DATA: LStatus = 234;
 const ERROR_NO_MORE_ITEMS: LStatus = 259;
 
 /// One ASIO driver registered under `HKLM\SOFTWARE\ASIO`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Serialized to the frontend over IPC, so it carries `Serialize` (design.md 9.4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AsioDevice {
     /// The registry subkey name under `HKLM\SOFTWARE\ASIO`.
     pub key_name: String,

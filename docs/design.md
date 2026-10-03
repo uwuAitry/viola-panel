@@ -1,11 +1,11 @@
 # viola-panel 设计文档
 
-> 状态：设计共识已达成（/grill-me 收敛，2026-10-02）。**未开始实现**。
+> 状态：设计共识已达成（/grill-me 收敛，2026-10-02）。界面层于 2026-10-03 修订为 WebView，见第 9 节。**未开始实现**。
 > 本文是设计与实现计划的唯一权威，改动先改本文。
 
 ## 0. 这是什么 / 不是什么
 
-**是什么**：一个独立的 Windows 桌面程序（Rust + egui/eframe），用于查看与调整 **orender（omniphony-renderer）的输出侧设置**，并作为 orender + ffplay 的启动器。
+**是什么**：一个独立的 Windows 桌面程序（Rust + wry/tao 承载 WebView2），用于查看与调整 **orender（omniphony-renderer）的输出侧设置**，并作为 orender + ffplay 的启动器。
 
 **不是什么**：
 - 不是 viola-bridge 的一部分。独立仓库、独立 CI、独立版本。**不复制、不链接 viola-bridge 的代码**，只通过进程边界调用。
@@ -77,7 +77,7 @@ viola-bridge ASIO 的"自环"来自 `crates/viola_asio/src/driver.rs:33-37,1226-
 |---|---|---|
 | 1 | 面板改什么 | orender 的**输出后端 + 设备**（S1 的 ASIO 恒为 viola-bridge，不动） |
 | 2 | 面板档位 | 只读状态 + 可调 |
-| 3 | 界面形态 | 独立 Rust exe，**egui/eframe** |
+| 3 | 界面形态 | 独立 Rust exe，**wry + WebView2**（2026-10-03 修订，见第 9 节） |
 | 4 | 阻塞语义 | **非阻塞**；单实例互斥体防重复开窗 |
 | 5 | pwsh 退路 | 留（但启动实现在 Rust，脚本只作旁路） |
 | 6 | 执行者 | **面板自己**拉起 orender + ffplay；**Apply = 重启 orender** |
@@ -108,7 +108,7 @@ viola-bridge ASIO 的"自环"来自 `crates/viola_asio/src/driver.rs:33-37,1226-
 
 ```
 ┌─ 状态条 ─────────────────────────────────────────────────────────────┐
-│ ● orender 运行中 (PID 1234) │ ffplay 运行中 │ S1: 已连接 │ 48 kHz/2ch │
+│ S1 ─▸ viola_asio ─▸ \\.\pipe\orender.input ─▸ ● orender(PID 1234) ─▸ ffplay ─▸ 默认端点 │
 └──────────────────────────────────────────────────────────────────────┘
 ┌─ 输出 ───────────────────────────────────────────────────────────────┐
 │ 后端      [ file ▾ | asio ]                                          │
@@ -195,7 +195,7 @@ orender.exe render "\\.\pipe\orender.input" --continuous \
 ## 8. 实现计划
 
 ### M0 骨架
-- 新仓库 `D:\viola-panel`（独立 git），`Cargo.toml`：`eframe`、`serde_yaml`（或 `serde_yml`）、`windows`（COM/注册表，按需最小 feature）
+- 新仓库 `D:\viola-panel`（独立 git），`Cargo.toml`：`wry`、`tao`、`serde`、`serde_json`、`serde_yaml_ng`（COM/注册表/MMDevice 为手写 FFI，不引 `windows` crate）
 - 单实例互斥体、窗口骨架、日志文件
 - **验收**：`cargo build` 出 exe，双击开窗，再双击不开第二窗
 
@@ -221,6 +221,7 @@ orender.exe render "\\.\pipe\orender.input" --continuous \
 
 ### M5 状态条 + Apply 重启
 - 按 4.2 / 4.3；失败按 Q21 显示退出码 + stderr 尾巴
+- 界面层按第 9 节重写为 WebView + 静态前端（替代原 egui 渲染）
 - **验收**：手动跑 Apply，观察 S1 断音一次后自动恢复
 
 ### M6 CI
@@ -230,13 +231,90 @@ orender.exe render "\\.\pipe\orender.input" --continuous \
 ### 待办（不在本轮）
 - **D1**：在 S1 的音频设备设置里打开本面板 —— 需改 `crates/viola_asio/src/driver.rs:993-999` 的 `asio_control_panel`，由 DLL `ShellExecute` 拉起本 exe（`asio_init` 目前丢弃了 `sysHandle`，`driver.rs:449-455`）。属 viola-bridge 仓库另一个 CI job，**可后加不返工**。
 
-## 9. 许可证
+## 9. 界面层修订（2026-10-03）：egui → WebView
+
+> 修订原因：用户要求「用 transitions.dev 组件库重写 UI 使其更漂亮」。transitions.dev 只发布
+> CSS + React 片段（**无 Rust/egui 目标**），逐字使用需要能渲染 CSS 的宿主；且 egui 默认字体
+> 无 CJK 字形，本机中文端点名已实测渲染为空白框（`docs/img/m5-window.png`）。
+> 用户裁定改用 WebView 渲染层。
+
+### 9.1 取代第 3 条共识
+
+| 项 | 原 | 现 |
+|---|---|---|
+| 窗口层 | `eframe`/`egui` 0.36 | `wry` + `tao` |
+| 前端 | Rust 内联渲染 | 静态 `index.html` + `styles.css` + `app.js` |
+| 通信 | 同进程直接调用 | `serde_json` over wry IPC，命令名见 9.3 |
+| 序列化 | 仅 `serde_yaml_ng` | `serde_yaml_ng` + `serde_json` |
+
+**不选 Tauri**：其 CLI/打包生态习惯走 npm，本机无 node；本面板仅约 8 个数据绑定，
+Tauri 的插件体系与打包器换不回其复杂度。`wry` 是 Tauri 的底层，只加两个 crate。
+**不选「Rust 起 localhost HTTP 服务 + 系统浏览器」**：会把「独立桌面程序」降级为
+「后台进程 + 浏览器标签页」，与第 4 条「非阻塞独立 exe」的精神不符，且引入端口与进程管理。
+
+### 9.2 前端零构建
+
+前端是三个静态文件，以 `include_str!` 编入 exe，**无 npm、无 node_modules、无 bundler、
+无构建步骤**。CI 仍是 `cargo test` + `cargo build` 两步。理由：transitions.dev 的规范本身
+即「复制粘贴、不引入动效库」（其 SKILL.md 明写 `don't pull in a motion library`），
+且其 React 变体是给已有 React 项目用的。
+
+### 9.3 IPC 契约
+
+前端 → Rust，单通道 JSON，命令名固定如下：
+
+| 命令 | 载荷 | 返回 |
+|---|---|---|
+| `get_state` | 无 | 全量状态快照 |
+| `save` | `PanelSettings` | `ok` / 错误串 |
+| `start` | 无 | 同上 |
+| `stop` | 无 | 同上 |
+| `apply` | 无 | 同上（= 保存 + 重启） |
+| `probe_driver` | 无 | `ok`（结果经 `get_state` 读回） |
+| `open_driver_panel` | 无 | 同上 |
+| `read_engine_log` | 无 | 日志尾部字符串 |
+
+**轮询而非推送**：前端每 500 ms 调一次 `get_state`，与既有
+`request_repaint_after(500ms)` 同构。耗时操作（驱动探测、控制面板）仍在独立线程执行，
+前端轮询读回结果 —— 既有 `mpsc` + `try_recv` 的并发模型不变。
+
+### 9.4 冻结与开口
+
+- **冻结**：第 2 节 26 条共识中除第 3 条外的全部内容；`config` / `launcher` /
+  `registry` / `asiodrv` / `mmdev` 五个模块的**函数签名与行为**一律不动。
+- **开口（仅此一处）**：给 `DriverInfo` 与 `AsioDevice` 补 `Serialize` 派生（纯增量，
+  为过 IPC），并新增 `serde_json` 依赖。原有 26 个单测均不引用 egui，全部保持通过
+  （本轮在 `main.rs` 另增 3 个，总计 29 个）。
+- 被删除的是 `main.rs` 的 egui 渲染代码与 `eframe` 依赖；`main.rs` 自身的
+  `acquire_single_instance` / `log_tail` 辅助函数保留。
+
+### 9.5 视觉方向（Q5 裁定）
+
+**插入式机架单元 + 信号链**。面板的本质是
+`S1 → viola_asio → pipe → orender → ffplay → 默认端点` 这条链上的一个可配置插入点。
+
+- 顶部状态条改为**真实信号链示意图**，标出本面板所处位置与当前断点。
+- 分区呈机架丝印感；阳极氧化深灰褐底（非纯黑）；琥珀色 LED 表示已启用，信号绿表示流通。
+- 数值一律等宽（`48000`、PID、buffer 区间）。
+- 动效遵循 transitions.dev 的 token 刻度：时长 7 级
+  （stagger 40 / micro 80 / quick 150 / fast 250 / medium 350 / slow 400 / very-slow 500 ms），
+  缓动以 `cubic-bezier(0.22, 1, 0.36, 1)` 为主，开慢关快（面板 400→350、toast 350→250）。
+- **必须保留 `prefers-reduced-motion: reduce` 守卫**（transitions.dev SKILL.md 要求；
+  注意其 `_root.css` 本身不含守卫，守卫需逐片段带上）。
+
+### 9.6 本次修订的已知代价
+
+本机**没有 Rust 工具链且不安装**（用户裁定走 CI）。因此 Rust 侧（窗口、IPC、编译）
+只能在 CI 验证；前端可在本机 Edge 中带桥接桩独立验证并截图。若 CI 连续两轮卡在同一
+错误，需回头重新讨论工具链。
+
+## 10. 许可证
 
 **GPL-3.0-or-later**（用户裁定）。**已知后果：本面板不能闭源商用。**
 
 本面板不复制、不链接 viola-bridge 代码，仅通过进程边界调用（spawn `orender.exe`、跑 `ffplay`、读写自有 YAML），因此本可自选宽松许可；选 GPL 是用户的明确决定。
 
-## 10. 与 viola-bridge 的边界
+## 11. 与 viola-bridge 的边界
 
 | 允许 | 禁止 |
 |---|---|

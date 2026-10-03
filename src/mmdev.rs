@@ -216,7 +216,7 @@ struct ComGuard {
 
 impl ComGuard {
     /// `RPC_E_CHANGED_MODE` counts as success-without-ownership: COM was already
-    /// initialised on this thread (by winit/eframe, typically), so the enumerator can
+    /// initialised on this thread (by the window event loop, typically), so the enumerator can
     /// still be created, but uninitialising would undo someone else's work.
     fn init() -> Result<Self, String> {
         // SAFETY: no output parameters; the return code is checked exhaustively.
