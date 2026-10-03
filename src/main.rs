@@ -751,45 +751,56 @@ mod tests {
         assert_eq!(serve("/secret").status(), 404);
     }
 
-    /// Every command the page sends must be recognised, and an unknown one must
-    /// be refused rather than ignored.
+    /// Every command the page sends is either recognised or explicitly refused.
+    /// An unparseable envelope is an `Err`; a well-formed command the panel
+    /// refuses reports through `pending_result`, which is what the page renders.
     #[test]
     fn ipc_commands_are_validated_at_the_boundary() {
         let mut app = PanelApp::new();
         // Never write the user's real config while testing.
         app.config_path = std::env::temp_dir().join("viola-panel-ipc-test.yaml");
 
-        assert!(app.handle_command("{\"cmd\":\"get_state\"}").is_ok());
-        assert!(app.handle_command("{\"cmd\":\"nonsense\"}").is_err());
+        // The only `Err` is a body that is not an envelope at all: there is no
+        // command to name in the reply, so it cannot be reported to the page.
         assert!(app.handle_command("not json").is_err());
 
+        // A body that parses but names no known command is refused rather than
+        // ignored, and the refusal reaches the page.
+        assert!(app.handle_command("{\"cmd\":\"nonsense\"}").is_ok());
+        assert!(!app.pending_result.take().expect("a result").ok);
+
         // An unknown key is refused rather than ignored, so a typo in the page
-        // cannot look like it did something.
+        // cannot look like it did something. A payload that omits the sample
+        // rate leaves it at 0, which validation must also refuse.
         let typo = r#"{"cmd":"save","args":{"speaker_layout":null,"enable_vbap":true,
             "output_backend":"file","output_device":null,"output_sample_rate":48000,
             "latency_target_ms":null,"latency":220}}"#;
-        assert!(app.handle_command(typo).is_err());
-
-        // A payload that omits the sample rate leaves it at 0, which validation
-        // must refuse rather than write.
         let partial = r#"{"cmd":"save","args":{"output_backend":"file"}}"#;
-        assert!(app.handle_command(partial).is_err());
         // So is a backend orender does not know, and a device under `file`.
         let bad_backend = r#"{"cmd":"save","args":{"speaker_layout":null,"enable_vbap":true,
             "output_backend":"wasapi","output_device":null,"output_sample_rate":48000,
             "latency_target_ms":null}}"#;
-        assert!(app.handle_command(bad_backend).is_err());
-
         let device_under_file = r#"{"cmd":"save","args":{"speaker_layout":null,"enable_vbap":true,
             "output_backend":"file","output_device":"X","output_sample_rate":48000,
             "latency_target_ms":null}}"#;
-        assert!(app.handle_command(device_under_file).is_err());
+
+        let before = app.config.panel.output_backend.clone();
+        for bad in [typo, partial, bad_backend, device_under_file] {
+            app.handle_command(bad)
+                .expect("a parseable envelope is not an Err");
+            let result = app.pending_result.take().expect("a result per command");
+            assert!(!result.ok, "expected a refusal for {bad}");
+            assert!(result.error.is_some(), "a refusal carries a reason");
+        }
+        // A refused patch must not have been folded into the config.
+        assert_eq!(app.config.panel.output_backend, before);
 
         // A well-formed patch is folded in without touching orender's paths.
         let good = r#"{"cmd":"save","args":{"speaker_layout":null,"enable_vbap":false,
             "output_backend":"asio","output_device":"ASIO4ALL v2","output_sample_rate":96000,
             "latency_target_ms":128}}"#;
         assert!(app.handle_command(good).is_ok());
+        assert!(app.pending_result.take().expect("a result").ok);
         assert_eq!(app.config.panel.output_backend, "asio");
         assert_eq!(app.config.panel.output_sample_rate, 96_000);
         assert_eq!(app.config.panel.latency_target_ms, Some(128));
