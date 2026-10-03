@@ -680,7 +680,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             (snapshot, result, log_text)
         };
 
-        if let Some(Ok(json)) = snapshot {
+        if let Some(Ok(json)) = snapshot.as_ref() {
             let _ = webview.evaluate_script(&format!("window.violaPanel.applyState({json});"));
         }
         if let Some(Ok(json)) = result.map(|r| serde_json::to_string(&r)) {
