@@ -35,6 +35,15 @@
   // `last` is the last snapshot the host pushed; it is the source of truth for
   // every render, so a push only ever re-renders from one object.
   var last = null;
+  // Unsaved edits. The host pushes a full snapshot every 500 ms, and `render`
+  // writes every control back from it — which silently reverted a choice the
+  // user had made but not yet submitted (picking `asio` snapped back to `file`
+  // before Start/Apply could be pressed). While this is set, a push still
+  // refreshes the derived readouts but never touches the settings controls.
+  var edits = false;
+  // True only for the commands that carry the form; a driver readout result
+  // must not be mistaken for the host accepting the settings.
+  var submitted = false;
   // Sample-rate candidates. The panel's own setting is authoritative here; if
   // the driver probe reported a rate, that value is offered first.
   var RATES = [44100, 48000, 88200, 96000, 176400, 192000];
@@ -110,6 +119,12 @@
   }
 
   function renderOutput(s) {
+    if (edits) {
+      renderReadout(s);
+      renderEndpoint(s);
+      applyBackendVisibility($("backend").value);
+      return;
+    }
     $("backend").value = s.settings.output_backend || "file";
 
     // Device list comes from the registry enumeration the host already did;
@@ -215,8 +230,10 @@
 
   // ── Render section ───────────────────────────────────────────────────────
   function renderRender(s) {
-    $("vbap").checked = !!s.settings.enable_vbap;
-    $("layout").value = s.settings.speaker_layout || "";
+    if (!edits) {
+      $("vbap").checked = !!s.settings.enable_vbap;
+      $("layout").value = s.settings.speaker_layout || "";
+    }
     $("fact-engine").textContent = s.engine_running ? "running" : "stopped";
     $("fact-config").textContent = s.config_path || "—";
   }
@@ -273,12 +290,15 @@
 
     applyResult: function (json) {
       var r = typeof json === "string" ? JSON.parse(json) : json;
-      if (r.ok) {
+      if (r.ok && submitted) {
+        // The host took the settings, so the next snapshot is the truth again.
+        edits = false;
         if (r.message) toast(r.message, "ok");
       } else {
         toast(r.error || "Operation failed", "error");
         if (r.detail) toast(r.detail, "error");
       }
+      submitted = false;
       if (r.refresh) send("get_state");
     },
 
@@ -302,6 +322,13 @@
   }
 
   function bind() {
+    // Any change to a settings control counts as an unsaved edit until the
+    // host confirms it, so a state push cannot overwrite it.
+    ["backend", "device", "rate", "latency-on", "latency", "vbap", "layout"].forEach(function (id) {
+      $(id).addEventListener("change", function () { edits = true; });
+      $(id).addEventListener("input", function () { edits = true; });
+    });
+
     $("backend").addEventListener("change", function () {
       applyBackendVisibility($("backend").value);
     });
@@ -337,9 +364,9 @@
       toast("Opening the driver's own window…", "warn");
     });
 
-    $("start").addEventListener("click", function () { send("start", settingsFromForm()); });
+    $("start").addEventListener("click", function () { submitted = true; send("start", settingsFromForm()); });
     $("stop").addEventListener("click", function () { send("stop"); });
-    $("apply").addEventListener("click", function () { send("apply", settingsFromForm()); });
+    $("apply").addEventListener("click", function () { submitted = true; send("apply", settingsFromForm()); });
 
     $("log-toggle").addEventListener("click", function () {
       var log = $("log");

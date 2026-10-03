@@ -271,13 +271,19 @@ Tauri 的插件体系与打包器换不回其复杂度。`wry` 是 Tauri 的底�
 |---|---|---|
 | `get_state` | 无 | 全量状态快照 |
 | `save` | `PanelSettings` | `ok` / 错误串 |
-| `start` | 无 | 同上 |
+| `start` | `PanelSettings` | 同上 |
 | `stop` | 无 | 同上 |
-| `apply` | 无 | 同上（= 保存 + 重启） |
+| `apply` | `PanelSettings` | 同上（= 保存 + 重启） |
 | `probe_driver` | 无 | `ok`（结果经 `get_state` 读回） |
 | `open_driver_panel` | 无 | 同上 |
 | `read_engine_log` | 无 | 日志尾部字符串 |
 
+**未提交编辑不被推送覆盖**：host 每 500 ms 推一次全量快照，若前端无条件回写控件，
+用户刚选的 `asio` 会在 500 ms 内被旧快照弹回 `file`（表现为「改参数不生效 / 切不到 asio」）。
+故前端在任一设置控件收到 `change`/`input` 后置 `edits` 标志，此期间推送只刷新派生
+读数与可见性，**不写回设置控件**；`start`/`apply` 成功（`ok && submitted`）后才释放。
+被拒的提交**不**释放（否则拒绝理由与用户刚做的编辑一起丢失）。
+回归检查：`tools/preview.ps1` 产出 `ui/.preview/` 后用 jsdom 加载 `dev-bridge.js` + `app.js` 验此五条。
 **轮询而非推送**：前端每 500 ms 调一次 `get_state`，与既有
 `request_repaint_after(500ms)` 同构。耗时操作（驱动探测、控制面板）仍在独立线程执行，
 前端轮询读回结果 —— 既有 `mpsc` + `try_recv` 的并发模型不变。

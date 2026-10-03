@@ -28,6 +28,20 @@ jobs:
         shell: pwsh
         run: cargo test --release
 
+      # The frontend is embedded with include_str!, so no Rust test can see a
+      # bug in app.js; and app.js is where the state-push/edit-lock logic lives
+      # (design.md 9.3). This is the one check that can.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Test the frontend
+        shell: pwsh
+        run: |
+          npm install --no-save --no-package-lock jsdom
+          pwsh -File tools/preview.ps1
+          node tools/check-ui.mjs
+
       - name: Build
         shell: pwsh
         run: cargo build --release
